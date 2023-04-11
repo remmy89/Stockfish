@@ -1170,39 +1170,65 @@ std::string Eval::trace(Position& pos) {
 } // namespace Stockfish
 
 
-// Define a function to evaluate the number of open files
-int evaluate_open_files(const Position& pos) {
-    int open_file_score = 0;
-
-    // Iterate over all files on the board
-    for (File f = FILE_A; f <= FILE_H; ++f) {
-        // Check if the current file is open for both sides
-        if ((pos.pieces(PAWN) & FILE_BB[f]).is_empty() &&
-            (pos.pieces(KNIGHT) | pos.pieces(BISHOP) | pos.pieces(ROOK) | pos.pieces(QUEEN)) & FILE_BB[f]) {
-            open_file_score += 10;
-        }
-    }
-
-    return open_file_score;
-}
-
-// Modify the evaluate_position function to include the new feature
 Value evaluate_position(const Position& pos) {
-    // Evaluate material balance, pawn structure, piece mobility, and other features
-    int material_balance = evaluate_material_balance(pos);
-    int pawn_structure_score = evaluate_pawn_structure(pos);
-    int piece_mobility_score = evaluate_piece_mobility(pos);
-    int king_safety_score = evaluate_king_safety(pos);
-    int bishop_pair_score = evaluate_bishop_pair(pos);
+    // Evaluate material balance
+    Value material_balance = evaluate_material_balance(pos);
 
-    // Evaluate open files
-    int open_file_score = evaluate_open_files(pos);
+    // Evaluate pawn structure
+    Value pawn_structure_score = evaluate_pawn_structure(pos);
+
+    // Evaluate piece mobility
+    Value piece_mobility_score = evaluate_piece_mobility(pos);
+
+    // Evaluate king safety based on number of attacking pieces
+    int king_safety_score = evaluate_king_safety(pos);
 
     // Combine all the feature scores into a single evaluation score
-    Value eval = material_balance + pawn_structure_score + piece_mobility_score + king_safety_score + bishop_pair_score + open_file_score;
+    Value eval = material_balance + pawn_structure_score + piece_mobility_score + king_safety_score;
 
     // Apply a scaling factor to the evaluation score
     eval = (eval * ScaleFactor) / 128;
 
     return eval;
 }
+
+Value evaluate_pawn_structure(const Position& pos) {
+    Square sq;
+    Color c;
+    int doubled_pawns = 0;
+    int isolated_pawns = 0;
+    int backward_pawns = 0;
+
+    for (PieceType pt = PAWN; pt <= PAWN; ++pt) {
+        for (c = WHITE; c <= BLACK; ++c) {
+            Bitboard pawns = pos.pieces(c, pt);
+            while (pawns) {
+                sq = pop_lsb(&pawns);
+
+                // Check for doubled pawns
+                if (pawns & pos.pieces_of_type(pt) & pos.pawns_of_color(c) & square_file(sq)) {
+                    doubled_pawns++;
+                }
+
+                // Check for isolated pawns
+                if ((pos.pieces_of_type(pt) & pos.pawns_of_color(c) & file_adjacent(sq)) == 0) {
+                    isolated_pawns++;
+                }
+
+                // Check for backward pawns
+                Bitboard friendly_pawns = pos.pawns_of_color(c);
+                Bitboard friendly_squares = friendly_pawns | pos.pieces_of_type(KNIGHT, c) | pos.pieces_of_type(BISHOP, c) |
+                                            pos.pieces_of_type(ROOK, c) | pos.pieces_of_type(QUEEN, c);
+                Bitboard backward_pawn_mask = backward_pawn_mask(c, sq);
+                if ((backward_pawn_mask & friendly_squares & pos.pieces_of_type(pt) & pos.pawns_of_color(c)) == 0) {
+                    backward_pawns++;
+                }
+            }
+        }
+    }
+
+    // Combine pawn structure scores
+    Value pawn_structure_score = -5 * doubled_pawns - 10 * isolated_pawns - 5 * backward_pawns;
+    return pawn_structure_score;
+}
+
