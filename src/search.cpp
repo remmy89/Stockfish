@@ -2017,3 +2017,38 @@ void Tablebases::rank_root_moves(Position& pos, Search::RootMoves& rootMoves) {
 }
 
 } // namespace Stockfish
+
+Value Search::think(Position& pos, StateListPtr& states, const SearchLimits& limits, bool blocking) {
+    // Initialize the search
+    if (limits.infinite || limits.ponder || limits.mate) {
+        // Ignore time limit
+        limits.time[WHITE] = limits.time[BLACK] = limits.inc[WHITE] = limits.inc[BLACK] = 0;
+    }
+
+    // Set the maximum search depth
+    int depth = 10;
+    if (limits.search_depth > 0) {
+        depth = limits.search_depth;
+    }
+
+    // Enable/disable mate search
+    bool mate_search = true;
+    if (limits.infinite || limits.depth || limits.nodes || limits.mate) {
+        mate_search = false;
+    }
+
+    // Search the tree to the specified depth
+    Value score = root_search(pos, states, depth, blocking, mate_search);
+
+    // Adjust the search score based on the time remaining
+    if (limits.infinite || limits.time[WHITE] + limits.time[BLACK] == 0) {
+        // No time limit
+        score = TimeLimit::none().adjust_score(score, pos.side_to_move());
+    } else {
+        // Adjust the score based on the remaining time
+        score = TimeLimit::get(limits).adjust_score(score, pos.side_to_move());
+    }
+
+    return score;
+}
+
